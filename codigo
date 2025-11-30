@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Calculadora Mercado Livre — Taxas, Lucro e Margem</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; color: #111; }
+    h1 { font-size: 20px; margin-bottom: 12px; }
+    .card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; max-width: 920px; }
+    .row { display: grid; grid-template-columns: repeat(12, 1fr); gap: 12px; align-items: end; }
+    label { font-size: 12px; color: #374151; display: block; margin-bottom: 6px; }
+    input, select, button { width: 100%; padding: 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; }
+    button { background: #2563eb; color: white; border: 0; cursor: pointer; }
+    button:hover { background: #1d4ed8; }
+    .muted { color: #6b7280; font-size: 12px; }
+    .grid-6 { grid-column: span 6; }
+    .grid-4 { grid-column: span 4; }
+    .grid-3 { grid-column: span 3; }
+    .grid-2 { grid-column: span 2; }
+    .grid-12 { grid-column: span 12; }
+    .switch { display: flex; gap: 8px; align-items: center; }
+    .output { margin-top: 16px; background: #f9fafb; border: 1px dashed #e5e7eb; padding: 12px; border-radius: 8px; }
+    .warn { color: #b45309; }
+    .ok { color: #065f46; }
+    .error { color: #b91c1c; }
+    .pill { display:inline-block; background:#eef2ff; color:#3730a3; padding:2px 8px; border-radius:999px; font-size:12px; margin-left:8px; }
+  </style>
+</head>
+<body>
+  <h1>Calculadora de Taxas do Mercado Livre — Eletrônicos</h1>
+  <div class="card">
+    <div class="row">
+      <div class="grid-6">
+        <label>Nome do produto (para sugerir categoria)</label>
+        <input id="q" placeholder="Ex.: smartphone samsung galaxy s22" />
+        <div class="muted">Use para sugerirmos a categoria correta automaticamente</div>
+      </div>
+      <div class="grid-6">
+        <label>Categoria (ID)</label>
+        <input id="category_id" placeholder="Ex.: MLB1055 (Celulares e Smartphones)" />
+        <div class="muted">Preenchemos ao escolher uma sugestão. Você pode colar manualmente.</div>
+      </div>
+
+      <div class="grid-3">
+        <label>Tipo de anúncio</label>
+        <select id="listing_type">
+          <option value="classic">Clássico</option>
+          <option value="premium">Premium</option>
+        </select>
+      </div>
+      <div class="grid-3">
+        <label>Preço de venda (R$)</label>
+        <input id="price" placeholder="Ex.: 1499,90" />
+      </div>
+      <div class="grid-3">
+        <label>Custo do produto (R$)</label>
+        <input id="cost" placeholder="Ex.: 1100,00" />
+      </div>
+      <div class="grid-3">
+        <label>Margem alvo (%)</label>
+        <input id="target_margin" placeholder="Ex.: 15" value="15" />
+      </div>
+
+      <div class="grid-3">
+        <label class="switch"><input type="checkbox" id="free_shipping" /> Frete grátis</label>
+      </div>
+      <div class="grid-3">
+        <label>Custo do frete (se grátis) (R$)</label>
+        <input id="shipping_cost" placeholder="Ex.: 28,00" />
+      </div>
+
+      <div class="grid-6">
+        <button id="calc">Calcular</button>
+      </div>
+
+      <div class="grid-12">
+        <div id="suggestions" class="muted"></div>
+      </div>
+      <div class="grid-12">
+        <div class="output" id="out"></div>
+      </div>
+
+      <div class="grid-12">
+        <details>
+          <summary>Configurações avançadas <span class="pill">se CORS bloquear</span></summary>
+          <div class="row">
+            <div class="grid-12">
+              <label>API Base (deixe vazio para chamar direto a API do Mercado Livre)</label>
+              <input id="api_base" placeholder="Ex.: https://seu-proxy.onrender.com" />
+              <div class="muted">Se você subir o proxy (Plano B), cole aqui a URL. Caso contrário, deixe em branco.</div>
+            </div>
+          </div>
+        </details>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Util: parse e formatação BR
+    const toBRL = (v) => new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(v || 0);
+    const pct = (v) => (v*100).toFixed(2).replace('.',',') + '%';
+    const parseBR = (s) => {
+      if (s == null) return 0;
+      s = String(s).trim().replace(/\./g,'').replace(',', '.');
+      const n = parseFloat(s);
+      return isNaN(n) ? 0 : n;
+    };
+
+    const mapListingType = (v) => v === 'premium' ? 'gold_pro' : 'gold_special';
+
+    // Chama API do ML diretamente ou via proxy (se api_base preenchido)
+    async function fetchML(path, params={}, apiBase='') {
+      const u = new URL(apiBase ? (apiBase + path) : ('https://api.mercadolibre.com' + path));
+      if (!apiBase) {
+        Object.entries(params).forEach(([k,v]) => u.searchParams.set(k, v));
+      }
+      const res = await fetch(apiBase ? u.toString() : u.toString(), {
+        method: 'GET',
+        headers: apiBase ? {'Content-Type':'application/json'} : {}
+      });
+      if (!res.ok) throw new Error('Erro na API: ' + res.status);
+      return res.json();
+    }
+
+    // Sugestão de categoria usando domain_discovery
+    async function suggestCategory(q) {
+      const apiBase = document.getElementById('api_base').value.trim();
+      if (!q) return [];
+      try {
+        const data = await fetchML('/sites/MLB/domain_discovery/search', {limit: '5', q}, apiBase);
+        return data || [];
+      } catch(e) {
+        console.warn('Falha em sugestão de categoria', e);
+        return [];
+      }
+    }
+
+    // Busca taxa (sale_fee) para um dado preço/listing/categoria
+    async function getSaleFee(price, listingTypeId, categoryId) {
+      const apiBase = document.getElementById('api_base').value.trim();
+      // Direto no ML: /sites/MLB/listing_prices?price=&listing_type_id=&category_id=
+      try {
+        let data;
+        if (!apiBase) {
+          const url = new URL('https://api.mercadolibre.com/sites/MLB/listing_prices');
+          url.searchParams.set('price', String(price));
+          url.searchParams.set('listing_type_id', listingTypeId);
+          url.searchParams.set('category_id', categoryId);
+          const r = await fetch(url);
+          if (!r.ok) throw new Error('HTTP '+r.status);
+          data = await r.json();
+        } else {
+          const url = new URL(apiBase + '/api/fee');
+          url.searchParams.set('price', String(price));
+          url.searchParams.set('listing_type', listingTypeId);
+          url.searchParams.set('category_id', categoryId);
+          const r = await fetch(url.toString());
+          if (!r.ok) throw new Error('HTTP '+r.status);
+          const j = await r.json();
+          return j.fee ?? 0;
+        }
+
+        // Normaliza formatos possíveis
+        const obj = Array.isArray(data) ? (data[0] || {}) : data;
+        const fee = obj.sale_fee ?? obj.sale_fee_amount ?? (obj.sale_fee_amount_in_cents ? obj.sale_fee_amount_in_cents/100 : undefined) ?? obj.fee_amount;
+        if (typeof fee === 'number') return fee;
+        // Alguns sites retornam sob "listing_prices"
+        if (obj.listing_prices && Array.isArray(obj.listing_prices)) {
+          const lp = obj.listing_prices.find(x => x.listing_type_id === listingTypeId) || obj.listing_prices[0];
+          const fee2 = lp?.sale_fee ?? lp?.sale_fee_amount ?? (lp?.sale_fee_amount_in_cents ? lp.sale_fee_amount_in_cents/100 : undefined) ?? lp?.fee_amount;
+          if (typeof fee2 === 'number') return fee2;
+        }
+        throw new Error('Não foi possível identificar o campo de taxa na resposta.');
+      } catch (e) {
+        console.error('Erro ao buscar taxa:', e);
+        throw e;
+      }
+    }
+
+    // Estima preço para bater margem alvo com poucas iterações
+    async function estimatePriceForMargin(targetMargin, basePrice, listingTypeId, categoryId, cost, shipping) {
+      let price = basePrice > 0 ? basePrice : (cost + shipping) * 1.3;
+      // 3 iterações: atualiza % de taxa próximo do preço candidato
+      for (let i=0;i<3;i++) {
+        const fee = await getSaleFee(price, listingTypeId, categoryId);
+        const feePct = Math.max(0, Math.min(0.5, fee / price || 0)); // limita para evitar divisões ruins
+        const denom = 1 - targetMargin - feePct;
+        if (denom <= 0.01) { price = (cost + shipping) * 2.2; break; }
+        price = (cost + shipping) / denom;
+      }
+      return price;
+    }
+
+    function renderSuggestions(list) {
+      const el = document.getElementById('suggestions');
+      if (!list || list.length === 0) { el.innerHTML = ''; return; }
+      el.innerHTML = '<div>Sugestões de categoria:</div>' + list.map(
+        (it, idx) => `<div>
+          ${idx+1}. ${it.category_name} — <code>${it.category_id}</code>
+          <button data-cid="${it.category_id}" style="margin-left:6px;">Usar</button>
+        </div>`
+      ).join('');
+      el.querySelectorAll('button[data-cid]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.getElementById('category_id').value = btn.getAttribute('data-cid');
+          el.innerHTML = '';
+        });
+      });
+    }
+
+    // Eventos
+    document.getElementById('q').addEventListener('input', async (ev) => {
+      const q = ev.target.value.trim();
+      if (q.length < 3) { renderSuggestions([]); return; }
+      const list = await suggestCategory(q);
+      renderSuggestions(list);
+    });
+
+    document.getElementById('calc').addEventListener('click', async () => {
+      const out = document.getElementById('out');
+      out.innerHTML = 'Calculando...';
+      const price = parseBR(document.getElementById('price').value);
+      const cost = parseBR(document.getElementById('cost').value);
+      const targetMarginPct = parseBR(document.getElementById('target_margin').value) / 100;
+      const listingTypeId = mapListingType(document.getElementById('listing_type').value);
+      const categoryId = document.getElementById('category_id').value.trim();
+      const freeShip = document.getElementById('free_shipping').checked;
+      const ship = freeShip ? parseBR(document.getElementById('shipping_cost').value) : 0;
+
+      if (!categoryId) { out.innerHTML = '<span class="warn">Informe a categoria (ou escolha uma sugestão acima).</span>'; return; }
+      if (price <= 0) { out.innerHTML = '<span class="warn">Informe um preço de venda válido.</span>'; return; }
+      if (cost < 0) { out.innerHTML = '<span class="warn">Informe um custo válido.</span>'; return; }
+
+      try {
+        const fee = await getSaleFee(price, listingTypeId, categoryId);
+        const lucro = price - fee - cost - ship;
+        const margem = lucro / price;
+
+        // Preço sugerido para atingir margem alvo (se fornecida)
+        let sugerido = null;
+        if (targetMarginPct > 0) {
+          sugerido = await estimatePriceForMargin(targetMarginPct, price, listingTypeId, categoryId, cost, ship);
+        }
+
+        out.innerHTML = `
+          <div><strong>Taxa ML:</strong> ${toBRL(fee)}</div>
+          <div><strong>Frete (você paga):</strong> ${toBRL(ship)} ${freeShip ? '<span class="pill">frete grátis</span>' : ''}</div>
+          <div><strong>Custo do produto:</strong> ${toBRL(cost)}</div>
+          <hr />
+          <div><strong>Lucro líquido:</strong> ${toBRL(lucro)} ${lucro >= 0 ? '<span class="ok">✓</span>' : '<span class="error">✗</span>'}</div>
+          <div><strong>Margem líquida:</strong> ${pct(margem)}</div>
+          ${sugerido ? `<hr /><div><strong>Preço sugerido para atingir ${pct(targetMarginPct)}:</strong> ${toBRL(sugerido)}</div>` : ''}
+          <div class="muted" style="margin-top:8px">Site: MLB (Brasil) | Tipo: ${listingTypeId}</div>
+        `;
+      } catch (e) {
+        out.innerHTML = `<span class="error">Falhou ao buscar taxa em tempo real. Possível bloqueio CORS no seu navegador.</span>
+          <div class="muted">Solução rápida: use o Plano B (proxy Render) abaixo e cole a URL no campo "API Base".</div>`;
+      }
+    });
+  </script>
+</body>
+</html>
