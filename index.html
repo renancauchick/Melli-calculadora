@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Calculadora Mercado Livre — Eletrônicos</title>
+  <meta name="description" content="Calculadora simples para precificar produtos no Mercado Livre: taxas, frete, margem e lucro." />
+  <style>
+    :root{
+      --bg:#0f172a;
+      --panel:#111827;
+      --soft:#1f2937;
+      --text:#e5e7eb;
+      --muted:#9ca3af;
+      --primary:#22c55e;
+      --danger:#ef4444;
+      --warn:#f59e0b;
+      --ok:#10b981;
+      --border:#374151;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; padding:24px; font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+      background:linear-gradient(180deg,#0b1022 0%, #0f172a 60%, #0b1022 100%); color:var(--text);
+    }
+    .container{max-width:980px; margin:0 auto;}
+    h1{margin:0 0 8px; font-size:24px}
+    .sub{color:var(--muted); margin-bottom:20px}
+    .grid{display:grid; grid-template-columns:1fr 1fr; gap:16px}
+    @media (max-width:820px){ .grid{grid-template-columns:1fr} }
+    .card{
+      background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+      border:1px solid var(--border);
+      border-radius:14px; padding:16px;
+      backdrop-filter: blur(6px);
+    }
+    label{display:block; font-size:13px; color:var(--muted); margin-bottom:6px}
+    input[type="number"], select{
+      width:100%; padding:10px 12px; border-radius:10px; border:1px solid var(--border);
+      background:var(--soft); color:var(--text); outline:none;
+    }
+    input[type="checkbox"]{transform:scale(1.1); margin-right:8px}
+    .row{display:flex; gap:12px; align-items:center; flex-wrap:wrap}
+    .row > *{flex:1}
+    .muted{color:var(--muted)}
+    .help{font-size:12px; color:var(--muted); margin-top:6px}
+    .pill{
+      display:inline-block; padding:4px 8px; border-radius:999px; border:1px solid var(--border);
+      background:rgba(255,255,255,0.04); font-size:12px; color:var(--muted); margin-left:8px;
+    }
+    .result{
+      display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:8px
+    }
+    @media (max-width:820px){ .result{grid-template-columns:1fr} }
+    .line{display:flex; justify-content:space-between; padding:10px 12px; border-radius:10px; border:1px dashed var(--border)}
+    .line.strong{border-style:solid; background:rgba(255,255,255,0.03)}
+    .line.ok{border-color:rgba(16,185,129,.5)}
+    .line.warn{border-color:rgba(245,158,11,.5)}
+    .line.bad{border-color:rgba(239,68,68,.5)}
+    .num{font-variant-numeric: tabular-nums; font-weight:600}
+    .tag{font-size:12px; color:var(--muted)}
+    .footer{
+      margin-top:18px; font-size:12px; color:var(--muted)
+    }
+    .btn{
+      display:inline-flex; align-items:center; gap:8px;
+      background:var(--primary); color:#052e16; border:none; padding:10px 14px; border-radius:10px;
+      font-weight:600; cursor:pointer;
+    }
+    .btn.secondary{
+      background:#1f2937; color:#e5e7eb; border:1px solid var(--border)
+    }
+    .split{display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap}
+    .split > .grow{flex:1}
+    .hr{height:1px; background:var(--border); margin:14px 0}
+    .small{font-size:12px}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Calculadora Mercado Livre — Eletrônicos</h1>
+    <div class="sub">Calcule taxas, custos, lucro e preço sugerido. Ajuste a taxa ML se sua conta tiver percentuais diferentes. <span class="pill">Single file • GitHub Pages ready</span></div>
+
+    <div class="grid">
+      <div class="card">
+        <h2 style="margin-top:0; font-size:18px">Entradas</h2>
+
+        <div class="row">
+          <div class="grow">
+            <label for="precoVenda">Preço de venda ao comprador (R\$)</label>
+            <input id="precoVenda" type="number" step="0.01" min="0" value="200" />
+          </div>
+          <div class="grow">
+            <label for="custoProduto">Custo do produto (R\$)</label>
+            <input id="custoProduto" type="number" step="0.01" min="0" value="120" />
+          </div>
+        </div>
+
+        <div class="row">
+          <div>
+            <label for="tipoAnuncio">Tipo de anúncio</label>
+            <select id="tipoAnuncio">
+              <option value="classico" selected>Clássico (padrão eletrônicos ~11%)</option>
+              <option value="premium">Premium (padrão eletrônicos ~16%)</option>
+              <option value="custom">Personalizado</option>
+            </select>
+            <div class="help">A taxa abaixo é auto-preenchida, mas pode ser alterada.</div>
+          </div>
+          <div>
+            <label for="taxaML">Taxa ML (%)</label>
+            <input id="taxaML" type="number" step="0.01" min="0" max="50" value="11" />
+          </div>
+        </div>
+
+        <div class="row" style="align-items:flex-start">
+          <div class="grow">
+            <label>Frete</label>
+            <div class="row" style="align-items:center">
+              <label class="row" style="flex:0 0 auto">
+                <input type="checkbox" id="freteGratis" />
+                Frete grátis (pago pelo vendedor)
+              </label>
+              <div class="grow" id="freteCustoBox" style="display:none">
+                <label for="freteCusto" class="small">Custo de frete (R\$)</label>
+                <input id="freteCusto" type="number" step="0.01" min="0" value="0" />
+              </div>
+            </div>
+            <div class="help">Se desmarcado, considera frete pago pelo comprador (sem custo para você).</div>
+          </div>
+        </div>
+
+        <div class="row">
+          <div>
+            <label for="imposto">Impostos sobre venda (%)</label>
+            <input id="imposto" type="number" step="0.01" min="0" max="50" value="0" />
+            <div class="help">Opcional. Ex.: Simples/ICMS estimado sobre a receita.</div>
+          </div>
+          <div>
+            <label for="tarifaFixa">Tarifa fixa por pedido (R\$)</label>
+            <input id="tarifaFixa" type="number" step="0.01" min="0" value="0" />
+            <div class="help">Opcional. Use se tiver custos fixos por venda.</div>
+          </div>
+        </div>
+
+        <div class="row">
+          <div>
+            <label for="margemAlvo">Meta de margem líquida (%)</label>
+            <input id="margemAlvo" type="number" step="0.1" min="-50" max="90" value="20" />
+            <div class="help">Se preenchida, calculamos o Preço Sugerido para atingir essa margem.</div>
+          </div>
+          <div style="display:flex; align-items:flex-end; gap:8px">
+            <button class="btn" id="btnCalcular">Calcular</button>
+            <button class="btn secondary" id="btnLimpar">Limpar</button>
+          </div>
+        </div>
+
+        <div class="hr"></div>
+        <div class="small muted">Dica: altere qualquer campo e veja os resultados atualizarem automaticamente.</div>
+      </div>
+
+      <div class="card">
+        <h2 style="margin-top:0; font-size:18px">Resultados</h2>
+        <div class="result">
+          <div class="line strong">
+            <div>Receita bruta</div>
+            <div class="num" id="outReceita">R\$ 0,00</div>
+          </div>
+          <div class="line">
+            <div>Taxa ML <span class="tag" id="outTaxaPct">(0%)</span></div>
+            <div class="num" id="outTaxa">R\$ 0,00</div>
+          </div>
+          <div class="line">
+            <div>Impostos</div>
+            <div class="num" id="outImpostos">R\$ 0,00</div>
+          </div>
+          <div class="line">
+            <div>Frete (vendedor)</div>
+            <div class="num" id="outFrete">R\$ 0,00</div>
+          </div>
+          <div class="line">
+            <div>Tarifa fixa</div>
+            <div class="num" id="outTarifa">R\$ 0,00</div>
+          </div>
+          <div class="line">
+            <div>Custo do produto</div>
+            <div class="num" id="outCusto">R\$ 0,00</div>
+          </div>
+          <div class="line strong" id="lucroBox">
+            <div>Lucro líquido</div>
+            <div class="num" id="outLucro">R\$ 0,00</div>
+          </div>
+          <div class="line" id="margemBox">
+            <div>Margem líquida</div>
+            <div class="num" id="outMargem">0,00%</div>
+          </div>
+        </div>
+
+        <div class="hr"></div>
+
+        <div class="result">
+          <div class="line strong">
+            <div>Preço de equilíbrio</div>
+            <div class="num" id="outBreakeven">R\$ 0,00</div>
+          </div>
+          <div class="line strong">
+            <div>Preço sugerido (meta)</div>
+            <div class="num" id="outSugestao">—</div>
+          </div>
+        </div>
+
+        <div class="footer">
+          Notas:
+          <ul>
+            <li>Preço de equilíbrio = preço mínimo para lucro zero com custos atuais.</li>
+            <li>Preço sugerido usa sua meta de margem (%) considerando taxa ML, impostos, frete e tarifa fixa.</li>
+            <li>Taxas do ML variam por categoria, campanha e conta. Ajuste “Taxa ML (%)” conforme sua realidade.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const el = id => document.getElementById(id);
+    const precoVenda = el('precoVenda');
+    const custoProduto = el('custoProduto');
+    const tipoAnuncio = el('tipoAnuncio');
+    const taxaML = el('taxaML');
+    const freteGratis = el('freteGratis');
+    const freteCusto = el('freteCusto');
+    const freteCustoBox = el('freteCustoBox');
+    const imposto = el('imposto');
+    const tarifaFixa = el('tarifaFixa');
+    const margemAlvo = el('margemAlvo');
+
+    const outReceita = el('outReceita');
+    const outTaxa = el('outTaxa');
+    const outTaxaPct = el('outTaxaPct');
+    const outImpostos = el('outImpostos');
+    const outFrete = el('outFrete');
+    const outTarifa = el('outTarifa');
+    const outCusto = el('outCusto');
+    const outLucro = el('outLucro');
+    const outMargem = el('outMargem');
+    const outBreakeven = el('outBreakeven');
+    const outSugestao = el('outSugestao');
+    const lucroBox = el('lucroBox');
+    const margemBox = el('margemBox');
+
+    function brl(v){
+      if (!isFinite(v)) return '—';
+      return v.toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
+    }
+    function pct(v){
+      if (!isFinite(v)) return '—';
+      return v.toLocaleString('pt-BR', { minimumFractionDigits:2, maximumFractionDigits:2 }) + '%';
+    }
+    function num(input, fallback=0){
+      const v = parseFloat(input.value);
+      return isNaN(v) ? fallback : v;
+    }
+
+    function setTaxaDefault(){
+      // Padrões típicos para ELETRÔNICOS (ajuste se necessário)
+      if (tipoAnuncio.value === 'classico') taxaML.value = 11;
+      else if (tipoAnuncio.value === 'premium') taxaML.value = 16;
+      // "custom" mantém valor que o usuário definiu
+    }
+
+    function calcular(){
+      const p = Math.max(0, num(precoVenda));
+      const c = Math.max(0, num(custoProduto));
+      const taxa = Math.max(0, num(taxaML)) / 100;
+      const imp = Math.max(0, num(imposto)) / 100;
+      const fixa = Math.max(0, num(tarifaFixa));
+      const freteOn = freteGratis.checked;
+      const frete = freteOn ? Math.max(0, num(freteCusto)) : 0;
+      const mAlvo = num(margemAlvo);
+
+      const receita = p;
+      const valTaxa = receita * taxa;
+      const valImp = receita * imp;
+
+      const lucro = receita - (c + valTaxa + valImp + frete + fixa);
+      const margem = receita > 0 ? (lucro / receita) * 100 : 0;
+
+      // Breakeven e Preço sugerido
+      // Fórmula com preço final p:
+      // lucro = p*(1 - taxa - imp) - (c + frete + fixa)
+      // p_eq (lucro=0) = (c + frete + fixa) / (1 - taxa - imp)
+      const K = c + frete + fixa;
+      const denom = (1 - taxa - imp);
+      const pEq = denom > 0 ? (K / denom) : NaN;
+
+      // Preço para meta de margem m:
+      // m = (p*(1 - taxa - imp) - K) / p
+      // m = (1 - taxa - imp) - K/p  => p = K / (1 - taxa - imp - m)
+      const mAlvoDec = isNaN(mAlvo) ? NaN : mAlvo / 100;
+      const denomMeta = (1 - taxa - imp - (isNaN(mAlvoDec) ? 0 : mAlvoDec));
+      const pSug = (!isNaN(mAlvoDec) && denomMeta > 0) ? (K / denomMeta) : NaN;
+
+      // Saída
+      outReceita.textContent = brl(receita);
+      outTaxa.textContent = brl(valTaxa);
+      outTaxaPct.textContent = `(${pct(taxa*100)})`;
+      outImpostos.textContent = brl(valImp);
+      outFrete.textContent = brl(frete);
+      outTarifa.textContent = brl(fixa);
+      outCusto.textContent = brl(c);
+      outLucro.textContent = brl(lucro);
+      outMargem.textContent = pct(margem);
+
+      // Cores de feedback
+      lucroBox.classList.remove('ok','warn','bad');
+      margemBox.classList.remove('ok','warn','bad');
+      if (lucro > 0){
+        if (margem >= 20) { lucroBox.classList.add('ok'); margemBox.classList.add('ok'); }
+        else if (margem >= 10) { lucroBox.classList.add('warn'); margemBox.classList.add('warn'); }
+        else { lucroBox.classList.add('bad'); margemBox.classList.add('bad'); }
+      } else {
+        lucroBox.classList.add('bad'); margemBox.classList.add('bad');
+      }
+
+      outBreakeven.textContent = isFinite(pEq) ? brl(pEq) : '—';
+      outSugestao.textContent = isFinite(pSug) ? brl(pSug) : '— (inviável com custos/percentuais atuais)';
+    }
+
+    // Eventos
+    tipoAnuncio.addEventListener('change', () => { if (tipoAnuncio.value!=='custom') setTaxaDefault(); calcular(); });
+    freteGratis.addEventListener('change', () => {
+      freteCustoBox.style.display = freteGratis.checked ? 'block' : 'none';
+      calcular();
+    });
+
+    [precoVenda, custoProduto, taxaML, freteCusto, imposto, tarifaFixa, margemAlvo].forEach(i=>{
+      i.addEventListener('input', calcular);
+      i.addEventListener('change', calcular);
+    });
+
+    el('btnCalcular').addEventListener('click', calcular);
+    el('btnLimpar').addEventListener('click', () => {
+      precoVenda.value = 200;
+      custoProduto.value = 120;
+      tipoAnuncio.value = 'classico';
+      setTaxaDefault();
+      freteGratis.checked = false;
+      freteCusto.value = 0;
+      freteCustoBox.style.display = 'none';
+      imposto.value = 0;
+      tarifaFixa.value = 0;
+      margemAlvo.value = 20;
+      calcular();
+    });
+
+    // Inicial
+    setTaxaDefault();
+    calcular();
+  </script>
+</body>
+</html>
